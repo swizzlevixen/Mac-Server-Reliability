@@ -36,8 +36,6 @@ Of course, there are more apps that we need to be running on this server, but I 
 
 To solve this, I wrote the **Startup Apps and Databases** AppleScript. This script expects to launch as a Login Item, waits to make sure that the network drives have mounted, and then launches the server apps one by one, giving a few seconds between each one, to make sure they get a chance to start up smoothly.
 
-[See code](https://github.com/swizzlevixen/Mac-Server-Reliability/blob/1c59dd81dd377cf54e4a02356cc97e9b9ab5e734/scripts/Startup%20Apps%20and%20Databases%20Script.scpt )
-
 I could have partially done this as a shell script, as I have several other parts of this server monitoring and setup workflow, but AppleScript allowed me to easily show dialogs with information about what was happening, and allow user interaction to cancel if something is going wrong. It also allows me to easily open the necessary databases in DEVONthink for web sharing.
 
 The shell scripts called by this AppleScript are simple helper scripts to write to a log file, and send a notification theough Home Assistant, and they will be discussed later.
@@ -92,9 +90,22 @@ Setting up Home Assistant itself is outside the scope of this document, but you 
 
 For a while, I was having trouble with the server kernel panicking, and so I wanted to make sure that I was notified any time the server rebooted. This is meant to run as a LaunchAgent, once on boot. It differs from the `log-event` script above, in that it grabs the latest boot time from `sysctl` for accuracy, instead of relying on the current time when this script runs.
 
+The LaunchAgent, `com.admin.log-reboot.plist` should be placed in the folder `~/Library/LaunchAgents/`, and then registered with this command:
+
+```
+launchctl bootstrap gui/<ADMIN_USER_ID> ~/Library/LaunchAgents/com.admin.log-reboot.plist
+```
+
+`<ADMIN_USER_ID>` can be found by running `id -u <USERNAME>` for the user which you use.
 
 ### Monitor Network Drives
 
 This script came about because the curent version of macOS Sequoia has an issue connecting over SMB to some Synology drive shares, and sometimes the drives disconnect unexpectedly. So now I have this script that is registered as a LaunchAgent that runs every 10 seconds, to make sure the drives are still connected, and if not, to log and notify me, reconnect them, and restart any necessary apps that rely on them.
 
 It uses `osascript` (a command line version of AppleScript) to quit the affected apps, because this allows the apps to quit gracefully, as opposed to just killing them without warning.
+
+The LaunchAgent, `com.admin.monitor-network-drives.plist` should be placed in the folder `~/Library/LaunchAgents/`, and then registered with this command:
+
+```
+launchctl bootstrap gui/<ADMIN_USER_ID> ~/Library/LaunchAgents/com.admin.monitor-network-drives.plist
+```
