@@ -32,6 +32,8 @@ Currently in the list:
 
 ## Startup Apps and Databases
 
+[Link](scripts/Startup%20Apps%20and%20Databases%20Script.scpt)
+
 Of course, there are more apps that we need to be running on this server, but I was running into two issues when putting them all in the Login Items list — this M2 Mac mini is _so fast_ that the apps would start up before the network drives were connected, and would not have the necessary files available. The second issue, we'll get to in a moment.
 
 To solve this, I wrote the **Startup Apps and Databases** AppleScript. This script expects to launch as a Login Item, waits to make sure that the network drives have mounted, and then launches the server apps one by one, giving a few seconds between each one, to make sure they get a chance to start up smoothly.
@@ -76,9 +78,13 @@ To give myself a little more information about any potential problems, I have sc
 
 ### Log Event
 
+[Link](scripts/log-event.sh)
+
 This simply logs events into a text log file, for easy reading. This is not meant to substitute for full system logs in troubleshooting a problem, but provide a very narrow  list of server-related events which may warrant further investigation. The event description is prefaced with a roughly ISO 8601 style date-time string, for easy reading.
 
 ### Send Notification to iPhone
+
+[Link](scripts/hass-notify-iphone.sh)
 
 This integration uses Home Assistant, the idea taken from [an article written by Viktor Mukha](https://medium.com/@viktor.mukha/push-notifications-from-bash-script-via-home-assistant-852fa92f60ab). I modified it to take both the title and message as arguments.
 
@@ -88,11 +94,13 @@ You'll need a [Home Assistant](https://www.home-assistant.io) (HASS) server, and
 - `http://homeassistant.local:8123` is the most likely address for your HASS server, but if you have a different one, you'll need to change that.
 - The `<MOBILE_APP_NAME>`, at the end of the API endpoint, is specific to the name you have given your mobile device. Viktor's directions to find this are basically correct: Go to **Settings > Automations & scenes > Automations**, click **+ CREATE AUTOMATION**, then **Create New Automation**, and in the **Then do** section, **+ ADD ACTION** and search for `send a notification`. If you have several mobile apps, you will see a list that looks mostly like “Notifications: Send a notification via mobile_app_<name>”. Find the one with the <name> that matches the name of your device, and that will be the value you need for the script. For instance, if my iPhone is called “Ianthe”, the value I am looking for is probably `mobile_app_ianthe`.
 
-### Log Reboots
+### Log Reboot
+
+[Link](scripts/log-reboot.sh)
 
 For a while, I was having trouble with the server kernel panicking, and so I wanted to make sure that I was notified any time the server rebooted. This is meant to run as a LaunchAgent, once on boot. It differs from the `log-event` script above, in that it grabs the latest boot time from `sysctl` for accuracy, instead of relying on the current time when this script runs.
 
-The LaunchAgent, `com.admin.log-reboot.plist` should be placed in the folder `~/Library/LaunchAgents/`, and then registered with this command:
+[The LaunchAgent, `com.admin.log-reboot.plist`](LaunchAgents/com.admin.log-reboot.plist) should be placed in the folder `~/Library/LaunchAgents/`, and then registered with this command:
 
 ```
 launchctl bootstrap gui/<ADMIN_USER_ID> ~/Library/LaunchAgents/com.admin.log-reboot.plist
@@ -102,11 +110,13 @@ launchctl bootstrap gui/<ADMIN_USER_ID> ~/Library/LaunchAgents/com.admin.log-reb
 
 ### Monitor Network Drives
 
+[Link](scripts/monitor-network-drives.sh)
+
 This script came about because the curent version of macOS Sequoia has an issue connecting over SMB to some Synology drive shares, and sometimes the drives disconnect unexpectedly. So now I have this script that is registered as a LaunchAgent that runs every 10 seconds, to make sure the drives are still connected, and if not, to log and notify me, reconnect them, and restart any necessary apps that rely on them.
 
 It uses `osascript` (a command line version of AppleScript) to quit the affected apps, because this allows the apps to quit gracefully, as opposed to just killing them without warning.
 
-The LaunchAgent, `com.admin.monitor-network-drives.plist` should be placed in the folder `~/Library/LaunchAgents/`, and then registered with this command:
+[The LaunchAgent, `com.admin.monitor-network-drives.plist`](LaunchAgents/com.admin.monitor-network-drives.plist) should be placed in the folder `~/Library/LaunchAgents/`, and then registered with this command:
 
 ```
 launchctl bootstrap gui/<ADMIN_USER_ID> ~/Library/LaunchAgents/com.admin.monitor-network-drives.plist
