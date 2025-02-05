@@ -36,7 +36,11 @@ Currently in the list:
 
 Of course, there are more apps that we need to be running on this server, but I was running into two issues when putting them all in the Login Items list — this M2 Mac mini is _so fast_ that the apps would start up before the network drives were connected, and would not have the necessary files available. The second issue, we'll get to in a moment.
 
-To solve this, I wrote the **Startup Apps and Databases** AppleScript. This script expects to launch as a Login Item, waits to make sure that the network drives have mounted, and then launches the server apps one by one, giving a few seconds between each one, to make sure they get a chance to start up smoothly.
+To solve this, I wrote the [Startup Apps and Databases](scripts/Startup%20Apps%20and%20Databases%20Script.scpt) AppleScript. This script expects to launch as a Login Item, waits to make sure that the network drives have mounted, and then launches the server apps one by one, giving a few seconds between each one, to make sure they get a chance to start up smoothly.
+
+Much of this is very specific to my setup. Change the name of the network drives and apps for the ones that you need to launch. You can also change the delay between apps by modifying `theInterval` variable at the top.
+
+> NOTE: I used `application id "DNtp"` to reference DEVONthink, since this is recommended in [the DEVONthink AppleScript docs](https://download.devontechnologies.com/download/devonthink/3.8.2/DEVONthink.help/Contents/Resources/pgs/automation-basics.html) so that when the app updates to a new version, and changes its name (e.g., “DEVONthink 3” to “DEVONthink 4”), the ID will remain the same. 
 
 I could have partially done this as a shell script, as I have several other parts of this server monitoring and setup workflow, but AppleScript allowed me to easily show dialogs with information about what was happening, and allow user interaction to cancel if something is going wrong. It also allows me to easily open the necessary databases in DEVONthink for web sharing.
 
