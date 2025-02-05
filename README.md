@@ -74,18 +74,6 @@ If it becomes necessary, you can easily revert this behavior by unchecking the b
 
 To give myself a little more information about any potential problems, I have scripts that add events to a log file, or send a notification to my iPhone.
 
-All of these scripts are freely licensed with the MIT License:
-
-> Copyright © 2025 Mark Boszko
-> 
-> Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-> 
-> The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-> 
-> THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-> 
-> https://mit-license.org
-
 ### Log Event
 
 This simply logs events into a log file on the admin user's Desktop, for easy reading. This is not meant to substitute for full system logs in troubleshooting a problem, but provide a very narrow  list of events which may warrant further investigation. The event description is prefaced with a roughly ISO 8601 style date-time string, for easy reading.
