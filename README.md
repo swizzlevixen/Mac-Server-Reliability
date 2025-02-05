@@ -1,6 +1,6 @@
-# Mac-Server-Reliability
+# Mac Server Reliability
 
-Helpful notes, and a suite of scripts written for my Mac mini M2 server, that help with server reliability, and notifications of errors.
+Helpful notes, and a suite of scripts written for my Mac mini M2 server, that help with server reliability, and notifications of errors. This server currently runs Plex, DEVONthink Server, Sonos, and Apple Music.
 
 The scripts in this repo have some sensitive information replaced with placeholders, for privacy. Otherwise they should be an accurate representation of what is running on my server.
 
