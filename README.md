@@ -36,6 +36,8 @@ Of course, there are more apps that we need to be running on this server, but I 
 
 To solve this, I wrote the **Startup Apps and Databases** AppleScript. This script expects to launch as a Login Item, waits to make sure that the network drives have mounted, and then launches the server apps one by one, giving a few seconds between each one, to make sure they get a chance to start up smoothly.
 
+[See code](https://github.com/swizzlevixen/Mac-Server-Reliability/blob/1c59dd81dd377cf54e4a02356cc97e9b9ab5e734/scripts/Startup%20Apps%20and%20Databases%20Script.scpt )
+
 I could have partially done this as a shell script, as I have several other parts of this server monitoring and setup workflow, but AppleScript allowed me to easily show dialogs with information about what was happening, and allow user interaction to cancel if something is going wrong. It also allows me to easily open the necessary databases in DEVONthink for web sharing.
 
 The shell scripts called by this AppleScript are simple helper scripts to write to a log file, and send a notification theough Home Assistant, and they will be discussed later.
