@@ -3,8 +3,8 @@
 # Based on code © 2024 Viktor Mukha, from this article:
 # https://medium.com/@viktor.mukha/push-notifications-from-bash-script-via-home-assistant-852fa92f60ab
 
-# This script sends a notification to Home Assistant
-# using the iPhone mobile app integration.
+# This script sends a notification via Home Assistant
+# using the mobile app integration.
 
 # Usage:
 # hass-notify-iphone.sh "Title" "Message"
