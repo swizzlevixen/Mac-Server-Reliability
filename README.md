@@ -82,9 +82,11 @@ This simply logs events into a text log file, for easy reading. This is not mean
 
 This integration uses Home Assistant, the idea taken from [an article written by Viktor Mukha](https://medium.com/@viktor.mukha/push-notifications-from-bash-script-via-home-assistant-852fa92f60ab). I modified it to take both the title and message as arguments.
 
-The bearer token is a Long Term token that you can set up in your user account on Home Assistant, and the `mobile_app_id` at the end of the API endpoint is specific to the name you have given your mobile device. `iphone` is the name of my particular phone.
+You'll need a [Home Assistant](https://www.home-assistant.io) (HASS) server, and a mobile device with the HASS [Companion App](https://companion.home-assistant.io). [Setting up Home Assistant](https://www.home-assistant.io/installation/) itself is outside the scope of this document, but you can see the linked article above for more information on how to configure this script for your particular setup. However, I noticed a few differences from his original instructions in the GUI I currently see in HASS.
 
-Setting up Home Assistant itself is outside the scope of this document, but you can see the linked article above on how to configure this script for your particular setup.
+- The Bearer `<LONG_TERM_TOKEN>` is an access token that you can set up HASS. Go to your **User** page (click on your name in the lower left), click on **Security** tab, and scroll to the bottom, to the section **Long-lived access tokens**. Here, you can create a token.
+- `http://homeassistant.local:8123` is the most likely address for your HASS server, but if you have a different one, you'll need to change that.
+- The `<MOBILE_APP_NAME>`, at the end of the API endpoint, is specific to the name you have given your mobile device. Viktor's directions to find this are basically correct: Go to **Settings > Automations & scenes > Automations**, click **+ CREATE AUTOMATION**, then **Create New Automation**, and in the **Then do** section, **+ ADD ACTION** and search for `send a notification`. If you have several mobile apps, you will see a list that looks mostly like “Notifications: Send a notification via mobile_app_<name>”. Find the one with the <name> that matches the name of your device, and that will be the value you need for the script. For instance, if my iPhone is called “Ianthe”, the value I am looking for is probably `mobile_app_ianthe`.
 
 ### Log Reboots
 
