@@ -124,5 +124,5 @@ end tell
 
 --Log completion
 do shell script "zsh /Applications/log-event.sh \"Startup Apps and Databases: completed\""
---Send notification to Mark's iPhone that services have restarted
-do shell script "zsh /Applications/hass-notify-callisto.sh  \"Skyfall Notification\" \"Startup Apps and Databases: completed\""
+--Send notification to iPhone that services have restarted
+do shell script "zsh /Applications/hass-notify-iphone.sh  \"Server Notification\" \"Startup Apps and Databases: completed\""
