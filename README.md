@@ -24,7 +24,7 @@ You can easily [set apps and network drives to launch when the user logs in](htt
 
 Currently in the list:
 
-- CCC Dashboard (Catbon Copy cloner, for backups)
+- CCC Dashboard (Carbon Copy Cloner, for backups)
 - `scandocs` network drive, from the Synology `mynas` NAS
 - `plexmedia` network drive, from the Synology `mynas` NAS
 - Screens Connect (for remote access)
