@@ -6,7 +6,7 @@ The scripts in this repo have some sensitive information replaced with placehold
 
 ## Automatically log in on startup
 
-Due to the nature of the apps that I'm using on this server, the Mac needs to run with a user logged in. This is accomplished with **System Settings > Users & Groups > Automatically log in as…** and select the user `admin`. Note that [FileVault must be disabled](https://support.apple.com/guide/mac-help/a-login-window-start-mac-mchlp1158/15.0/mac/15.0) for automatic login to be available. Yes, that's less secure, but this Mac lives in an equipment rack in my home, and if someone we don't trust has physical access to that machine, we have bigger problems.
+Due to the nature of the apps that I'm using on this server, the Mac needs to run with a user logged in. This is accomplished with **System Settings > Users & Groups > Automatically log in as…** and select the user. Note that [FileVault must be disabled](https://support.apple.com/guide/mac-help/a-login-window-start-mac-mchlp1158/15.0/mac/15.0) for automatic login to be available. Yes, that's less secure, but this Mac lives in an equipment rack in my home, and if someone we don't trust has physical access to that machine, we have bigger problems.
 
 ## Energy Settings
 
@@ -76,7 +76,7 @@ To give myself a little more information about any potential problems, I have sc
 
 ### Log Event
 
-This simply logs events into a log file on the admin user's Desktop, for easy reading. This is not meant to substitute for full system logs in troubleshooting a problem, but provide a very narrow  list of events which may warrant further investigation. The event description is prefaced with a roughly ISO 8601 style date-time string, for easy reading.
+This simply logs events into a text log file, for easy reading. This is not meant to substitute for full system logs in troubleshooting a problem, but provide a very narrow  list of server-related events which may warrant further investigation. The event description is prefaced with a roughly ISO 8601 style date-time string, for easy reading.
 
 ### Send Notification to iPhone
 
@@ -96,7 +96,7 @@ The LaunchAgent, `com.admin.log-reboot.plist` should be placed in the folder `~/
 launchctl bootstrap gui/<ADMIN_USER_ID> ~/Library/LaunchAgents/com.admin.log-reboot.plist
 ```
 
-`<ADMIN_USER_ID>` can be found by running `id -u <USERNAME>` for the user which you use.
+`<ADMIN_USER_ID>` can be found by running `id -u <USERNAME>` for the user which your server is normally logged in as.
 
 ### Monitor Network Drives
 
