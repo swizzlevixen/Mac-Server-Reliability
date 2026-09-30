@@ -1,0 +1,63 @@
+# mac-server-watchdog configuration
+# Copy to ~/.config/mac-server-watchdog.conf and edit for your server.
+# This file is sourced by zsh, so it's plain shell syntax.
+
+# Name used in dialogs and notifications (defaults to the Mac's Computer Name)
+# SERVER_NAME="Mac mini"
+
+# ---------- network shares ----------
+# Your NAS, for remounting shares that stay missing. Prefer the plain .local
+# hostname (or a fixed IP) over the Bonjour service name "mynas._smb._tcp.local",
+# which is the slowest to resolve right after boot.
+NAS_HOST="mynas.local"
+
+# Share names as they appear under /Volumes. Something else (Login Items, or an app
+# like AutoMounter) should normally mount them; the watchdog only steps in if one
+# stays missing for SHARE_GRACE seconds, and it uses the Keychain credentials
+# already saved for the NAS.
+SHARES=(plexmedia scandocs)
+
+# ---------- services ----------
+# One line per app, started in this order:
+#   "key|Label|app|required shares|health URL"
+#   key             short id used for state files (letters, digits, dashes)
+#   Label           shown in dialogs and notifications
+#   app             bundle id (com.example.App), or creator:XXXX to find the app by its
+#                   creator code — e.g. creator:DNtp keeps working when DEVONthink renames
+#                   itself between major versions
+#   required shares space-separated share names; the app won't be started until they're
+#                   mounted (empty = no requirement)
+#   health URL      optional; if set, the app must answer here or it's restarted
+#                   (empty = just keep it running)
+SERVICES=(
+  "plex|Plex Media Server|com.plexapp.plexmediaserver|plexmedia|http://127.0.0.1:32400/identity"
+  "sonos|Sonos|com.sonos.macController2|plexmedia|"
+  "music|Music|com.apple.Music|plexmedia|"
+  "devonthink|DEVONthink|creator:DNtp|scandocs|http://127.0.0.1:<DEVONTHINK_SERVER_PORT>/"
+  "mail|Mail|com.apple.mail||"
+)
+
+# Services to quit if one of their required shares stays missing past SHARE_GRACE,
+# and restart once it's back. Use this for apps that misbehave without their data —
+# e.g. Plex marking media unavailable. Other apps just aren't (re)started until the
+# share returns, but are left running if a share drops.
+QUIT_WHEN_SHARE_MISSING=(plex music)
+
+# ---------- DEVONthink (optional) ----------
+# Databases to keep open (DEVONthink's web server only serves open databases).
+DEVONTHINK_DATABASES=("Scans" "Shared")
+DEVONTHINK_DB_DIR="$HOME/Databases"
+
+# ---------- logging & notifications ----------
+LOG_FILE="$HOME/Library/Logs/mac-server-events.log"
+# Called as: NOTIFY_CMD "Title" "Message" [priority]. Swap in
+# /Applications/hass-notify-iphone.sh to notify through Home Assistant instead.
+NOTIFY_CMD="/Applications/pushover-notify.sh"
+
+# ---------- tuning (defaults shown) ----------
+# SHARE_GRACE=180      # seconds a share may be missing before the watchdog remounts it
+# LAUNCH_GRACE=300     # seconds after launching an app before health checks count
+# UNHEALTHY_LIMIT=3    # consecutive failed health checks before a restart
+# MAX_RESTARTS=3       # per service per hour, then give up and send a high-priority alert
+# BOOT_WINDOW=900      # "startup" dialogs and the boot summary happen within this long after boot
+# DIALOG_SECONDS=4     # how long each dialog stays on screen
