@@ -6,7 +6,7 @@
 # log-event.sh "Event description"
 
 # Path to the log file
-log_file="/path/to/log/events.log"
+log_file="$HOME/Library/Logs/mac-server-events.log"
 
 # Log the current time with any provided text
 {

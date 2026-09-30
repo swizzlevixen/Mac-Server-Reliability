@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.admin.mac-server-watchdog</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/zsh</string>
+		<string>/Applications/mac-server-watchdog.sh</string>
+	</array>
+	<!-- Run at login, then every 60 seconds -->
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StartInterval</key>
+	<integer>60</integer>
+	<!-- Without this, launchd kills the detached dialog runner when each run exits,
+	     and the dialogs never appear -->
+	<key>AbandonProcessGroup</key>
+	<true/>
+	<key>StandardOutPath</key>
+	<string>/tmp/mac-server-watchdog.log</string>
+	<key>StandardErrorPath</key>
+	<string>/tmp/mac-server-watchdog.log</string>
+</dict>
+</plist>
