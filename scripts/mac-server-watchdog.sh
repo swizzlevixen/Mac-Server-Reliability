@@ -326,7 +326,12 @@ fi
 pressure=$(sysctl -n kern.memorystatus_vm_pressure_level 2>/dev/null)
 if (( ${pressure:-1} > 1 )); then
     runs=$(( $(st_get pressure-runs) + 1 )); st_set pressure-runs "$runs"
-    (( runs >= MEMORY_PRESSURE_RUNS )) && mark_down memory "Memory pressure has been high for $runs min (swap used: $(sysctl -n vm.swapusage | awk '{print $6}'))"
+    if (( runs >= MEMORY_PRESSURE_RUNS )) && [[ ! -f "$STATE/down-memory" ]]; then
+        # Name the biggest users (top's MEM includes compressed memory), so the alert says what to look at
+        hogs=$(top -l 1 -o mem -n 3 -stats mem,command | tail -3 \
+            | awk '{m=$1; $1=""; sub(/^ /,""); printf "%s%s %s", (NR>1 ? ", " : ""), $0, m}')
+        mark_down memory "Memory pressure has been high for $runs min (swap used: $(sysctl -n vm.swapusage | awk '{print $6}'); top users: $hogs)"
+    fi
 else
     rm -f "$STATE/pressure-runs"
     mark_up memory "Memory pressure"
