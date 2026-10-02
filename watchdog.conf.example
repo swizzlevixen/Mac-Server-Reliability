@@ -54,6 +54,13 @@ LOG_FILE="$HOME/Library/Logs/mac-server-events.log"
 # /Applications/hass-notify-iphone.sh to notify through Home Assistant instead.
 NOTIFY_CMD="/Applications/pushover-notify.sh"
 
+# ---------- heartbeat (optional) ----------
+# A URL the watchdog requests after every completed run, such as an Uptime Kuma "push"
+# monitor. If the pings stop, the watchdog itself (or the whole Mac) has stopped, which
+# is the one thing it can't notify you about on its own. The run's status ("OK", or the
+# current problems) is sent along as the msg parameter.
+# HEARTBEAT_URL="https://uptime.example.com/api/push/XXXXXXXXXX"
+
 # ---------- tuning (defaults shown) ----------
 # SHARE_GRACE=180      # seconds a share may be missing before the watchdog remounts it
 # LAUNCH_GRACE=300     # seconds after launching an app before health checks count
@@ -61,3 +68,5 @@ NOTIFY_CMD="/Applications/pushover-notify.sh"
 # MAX_RESTARTS=3       # per service per hour, then give up and send a high-priority alert
 # BOOT_WINDOW=900      # "startup" dialogs and the boot summary happen within this long after boot
 # DIALOG_SECONDS=4     # how long each dialog stays on screen
+# MIN_FREE_GB=20       # warn when the startup disk has less free space than this
+# MEMORY_PRESSURE_RUNS=10  # warn after this many consecutive runs (minutes) under memory pressure

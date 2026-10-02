@@ -43,6 +43,9 @@ UNHEALTHY_LIMIT=3               # consecutive failed health checks before a rest
 MAX_RESTARTS=3                  # per service per hour, then give up and notify
 BOOT_WINDOW=900                 # "startup" dialogs + boot summary within this long after boot
 DIALOG_SECONDS=4                # how long each dialog stays up
+MIN_FREE_GB=20                  # warn when the startup disk has less free space than this
+MEMORY_PRESSURE_RUNS=10         # warn after this many consecutive runs under memory pressure
+HEARTBEAT_URL=""                # e.g. an Uptime Kuma push URL; pinged after every completed run
 DRY_RUN=${DRY_RUN:-0}
 
 CONF=${WATCHDOG_CONF:-$HOME/.config/mac-server-watchdog.conf}
@@ -51,6 +54,10 @@ if [[ ! -r $CONF ]]; then
     exit 1
 fi
 source "$CONF"
+
+# Errors go to the event log. (launchd itself can't open files in ~/Desktop, so this
+# is done here rather than with StandardErrorPath in the LaunchAgent.)
+(( DRY_RUN )) || exec >>"$LOG_FILE" 2>&1
 
 mkdir -p "$STATE" "${LOG_FILE:h}"
 
@@ -294,6 +301,37 @@ for entry in $SERVICES; do
     [[ $app == creator:DNtp ]] && running "$APP_EXE" && devonthink_databases
 done
 
+# ---------- system health ----------
+free_gb=$(df -g /System/Volumes/Data | awk 'NR==2 {print $4}')
+if [[ -n $free_gb ]] && (( free_gb < MIN_FREE_GB )); then
+    mark_down disk "Startup disk is almost full: ${free_gb} GB free"
+else
+    mark_up disk "Startup disk space"
+fi
+
+# NAS traffic should go over a wired port. macOS can quietly move Wi-Fi above Ethernet
+# in the service order, and then SMB and Time Machine run over Wi-Fi.
+if [[ -n $NAS_HOST ]]; then
+    wifi_dev=$(networksetup -listallhardwareports | awk '/Hardware Port: Wi-Fi/ {getline; print $2}')
+    nas_ip=$(dscacheutil -q host -a name "$NAS_HOST" | awk '/^ip_address/ {print $2; exit}')
+    nas_if=${nas_ip:+$(route -n get "$nas_ip" 2>/dev/null | awk '/interface:/ {print $2}')}
+    if [[ -n $wifi_dev && $nas_if == $wifi_dev ]]; then
+        mark_down nas-route "Traffic to $NAS_HOST is going over Wi-Fi ($wifi_dev) instead of Ethernet. Check the network service order."
+    elif [[ -n $nas_if ]]; then
+        mark_up nas-route "Traffic to $NAS_HOST over Ethernet"
+    fi
+fi
+
+# 1 = normal, 2 = warning, 4 = critical
+pressure=$(sysctl -n kern.memorystatus_vm_pressure_level 2>/dev/null)
+if (( ${pressure:-1} > 1 )); then
+    runs=$(( $(st_get pressure-runs) + 1 )); st_set pressure-runs "$runs"
+    (( runs >= MEMORY_PRESSURE_RUNS )) && mark_down memory "Memory pressure has been high for $runs min (swap used: $(sysctl -n vm.swapusage | awk '{print $6}'))"
+else
+    rm -f "$STATE/pressure-runs"
+    mark_up memory "Memory pressure"
+fi
+
 # ---------- boot summary: once per boot, when everything is up or the window closes ----------
 if $BOOTING && [[ ! -f "$STATE/boot-$boot" ]]; then
     all_up=true
@@ -315,4 +353,11 @@ if $BOOTING && [[ ! -f "$STATE/boot-$boot" ]]; then
     fi
 fi
 rm -f "$STATE"/boot-*(Nm+30)
+
+# Heartbeat last, so it means "the watchdog completed a run", not just "the Mac is on".
+if [[ -n $HEARTBEAT_URL ]] && (( ! DRY_RUN )); then
+    curl -fsS -m 10 -o /dev/null -G --data-urlencode "status=up" \
+        --data-urlencode "msg=${${(j:; :)problems}:-OK}" "$HEARTBEAT_URL" 2>/dev/null \
+        || log "heartbeat failed"
+fi
 exit 0
