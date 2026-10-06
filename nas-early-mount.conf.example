@@ -1,0 +1,23 @@
+# /etc/nas-early-mount.conf — config for nas-early-mount.sh
+# Holds the NAS password, so: sudo chown root:wheel /etc/nas-early-mount.conf
+#                             sudo chmod 600 /etc/nas-early-mount.conf
+
+# The NAS, written the same way as in your existing mounts (run `mount` to see them),
+# so your automounter recognizes these as its own shares and doesn't mount them again.
+# A Bonjour service name works here: the script waits for the NAS before mounting.
+NAS_HOST="mynas._smb._tcp.local"
+
+# The account on the NAS, and its password, URL-encoded. To encode it:
+#   python3 -c 'import urllib.parse, getpass; print(urllib.parse.quote(getpass.getpass(), safe=""))'
+NAS_USER="nasuser"
+NAS_PASS_ENC="REPLACE_ME"
+
+# The local user the mounts should belong to: the one that's automatically logged in
+MOUNT_USER="admin"
+
+# Shares to mount at /Volumes/<share>. "share:folder" mounts at /Volumes/<folder> instead
+# (handy for testing without touching the real mount).
+SHARES=(plexmedia scandocs)
+
+# How long to wait for the NAS at boot before giving up and leaving it to the automounter
+WAIT_SECS=300

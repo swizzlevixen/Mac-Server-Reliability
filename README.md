@@ -1,6 +1,6 @@
 # Mac Server Reliability
 
-Helpful notes, and a suite of scripts written for my Mac mini M2 server, that help with server reliability, and notifications of errors. This server currently runs Plex, DEVONthink Server, Sonos, Apple Music, and Mail.
+Helpful notes, and a suite of scripts written for my Mac mini M2 server, that help with server reliability, and notifications of errors. This server currently runs Plex, DEVONthink Server, Apple Music, and Mail.
 
 The scripts in this repo have some sensitive information replaced with placeholders, for privacy. Otherwise they should be an accurate representation of what is running on my server.
 
@@ -30,17 +30,43 @@ A sleeping Mac pauses the watchdog too, so it can't fix anything.
 
 ### Don't reopen apps after a restart
 
-If the Mac reboots abnormally (kernel panic, power loss, etc.), it "helpfully" automatically re-opens all previously running apps — before the network shares are mounted, which defeats the whole point of starting things in order.
+After an abnormal restart (kernel panic, power loss) **and after every software update restart**, macOS "helpfully" reopens the apps that were running, even with **Reopen windows when logging back in** switched off. They open within seconds of login: before the network shares are mounted, and before the watchdog can start things in order. That does real damage. Music, for one, can't find its media folder on the share and quietly resets it to the local default, after which every song on the share looks missing. (The watchdog's [local media folder guard](#how-it-works) catches that.)
 
-[The solution](https://superuser.com/questions/338004/prevent-mac-from-reloading-apps-after-restart) is to close all open apps, and then find the `.plist` that saves information about which apps are currently running, that the Mac uses to re-open the apps when you reboot. Look for this file:
+On **macOS 26 Tahoe**, the list of apps to reopen is kept here (you can see loginwindow load it with `/usr/bin/log show --predicate 'process == "loginwindow" AND category == "TAL"'`):
 
 ```
-~/Library/Preferences/ByHost/com.apple.loginwindow.*.plist
+~/Library/Group Containers/group.com.apple.loginwindow.persistent-apps/persistantApps
 ```
 
-The `*` will be a long random character identifier. Select the file in the Finder, and then **File > Get Info** (⌘-I) to open the Info window for the file. In the General section, check the **Locked** box, and close the window. This will prevent macOS from changing the contents of the file, and no other apps will be opened if the Mac reboots abnormally.
+(Yes, "persistant".) Empty it and lock it, so there's never anything to reopen. Terminal needs **Full Disk Access** for this (System Settings > Privacy & Security > Full Disk Access, then relaunch Terminal); even `sudo` can't open that folder without it.
 
-If it becomes necessary, you can easily revert this behavior by unchecking the box in the Info window.
+```
+cd ~/Library/Group\ Containers/group.com.apple.loginwindow.persistent-apps/
+cp -p persistantApps persistantApps.bak
+cat > persistantApps <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>PersistentApps</key>
+	<array/>
+</dict>
+</plist>
+EOF
+chflags uchg persistantApps
+```
+
+To undo: `chflags nouchg persistantApps`, and put the backup back. Also turn off the older relaunch setting, which costs nothing:
+
+```
+defaults write com.apple.loginwindow LoginwindowLaunchesRelaunchApps -bool false
+```
+
+Tested on Tahoe 26.7.1 with the apps left running and **Reopen windows** switched *on*: loginwindow found 0 apps to reopen, opened only Finder, and the file was still empty and locked afterwards.
+
+**Older advice, and why it no longer works.** The fix used to be to lock `~/Library/Preferences/ByHost/com.apple.loginwindow.*.plist`. Tahoe doesn't use that file for this any more. And if the Mac was set up with Migration Assistant, `ByHost` may hold files from the *old* Mac: the `*` is the hardware UUID, so check it against this Mac's (`ioreg -rd1 -c IOPlatformExpertDevice | grep IOPlatformUUID`) before locking anything.
+
+Even with all this, the safest habit is to run [`before-update.sh`](#before-update) before installing a macOS update, and to [mount the shares before login](#mount-the-shares-before-login), so an app that does start early still finds its files.
 
 ### Remote Login (optional, but handy)
 
@@ -62,6 +88,42 @@ With the watchdog in charge of the server apps, Login Items is now only for thin
 
 If you use [AutoMounter](https://www.pixeleyes.co.nz/automounter/) to keep the shares mounted, consider turning off its **unmount on network interface change** setting on a wired server. With it on, every network reconfiguration (a router DNS change, a DHCP renewal, an IPv6 update) briefly unmounts *every* share. My log showed that happening two or three times a month. The watchdog tolerates short drops, but there's no reason to cause them.
 
+## Mount the shares before login
+
+[Script](scripts/nas-early-mount.sh) · [Example config](nas-early-mount.conf.example) · [LaunchDaemon](LaunchDaemons/com.admin.nas-early-mount.plist)
+
+Login items and AutoMounter only mount the shares *after* login, and anything that starts at login races them. [`nas-early-mount.sh`](scripts/nas-early-mount.sh) runs once at boot from a LaunchDaemon, before anyone logs in. It waits for the NAS, then mounts each share **as the logged-in user** (with `sudo -u`), at the usual `/Volumes/<share>` path. The mounts are indistinguishable from Finder's or AutoMounter's: same paths, same owner, same permissions.
+
+AutoMounter (or your login items) keeps running and still handles reconnects after the NAS blips. macOS won't mount a share twice for the same user, so they don't end up with duplicate `/Volumes/<share>-1` mounts. In testing, the shares were mounted about 15 seconds after boot, before AutoMounter started and before the watchdog started the apps.
+
+The script never mounts over a folder that has something in it, and if a mount fails it removes the empty folder it made and leaves the share to the automounter. It logs to `/var/log/nas-early-mount.log`.
+
+**Installing:**
+
+1. Copy the script somewhere root owns (root runs it, so it shouldn't be in a folder you can write to):
+   ```
+   sudo mkdir -p /usr/local/libexec
+   sudo install -o root -g wheel -m 755 scripts/nas-early-mount.sh /usr/local/libexec/
+   ```
+2. Copy [`nas-early-mount.conf.example`](nas-early-mount.conf.example) to `/etc/nas-early-mount.conf`, edit it, and make it readable by root only, since it holds the NAS password:
+   ```
+   sudo chown root:wheel /etc/nas-early-mount.conf
+   sudo chmod 600 /etc/nas-early-mount.conf
+   ```
+   To try it without touching your real mounts, list one share that isn't mounted as `"share:test-folder"`, and run `sudo zsh /usr/local/libexec/nas-early-mount.sh`.
+3. Install the LaunchDaemon. Loading it runs it once: shares that are already mounted are skipped.
+   ```
+   sudo cp LaunchDaemons/com.admin.nas-early-mount.plist /Library/LaunchDaemons/
+   sudo launchctl bootstrap system /Library/LaunchDaemons/com.admin.nas-early-mount.plist
+   ```
+
+**Why not autofs?** macOS's built-in automounter seems made for this: it mounts a share the moment anything touches its path. I tried it, and it doesn't fit:
+
+- **The mounts belong to root.** autofs mounts as root, so every folder shows as `root`, `drwx------`, and the logged-in user can't even list them.
+- **The options that would fix that are refused.** With `filemode`/`dirmode` (or `noowners`) in the map, automountd fails with a misleading "No route to host", even though the same options work with `mount_smbfs` directly.
+- **Sandboxed apps can't trigger it.** The kernel denies `system-automount` to sandboxed apps (Mail, for one), so the "mounts on first touch" benefit doesn't apply to them anyway.
+- autofs also refuses mount points under `/Volumes` ("mountpoint unavailable"), unless you write them as `/System/Volumes/Data/../Data/Volumes/<name>`.
+
 ## The watchdog
 
 [Script](scripts/mac-server-watchdog.sh) · [Example config](watchdog.conf.example) · [LaunchAgent](LaunchAgents/com.admin.mac-server-watchdog.plist)
@@ -78,7 +140,8 @@ Every 60 seconds (and once at login), the watchdog runs through this:
    - **Rate limited.** No app is restarted more than `MAX_RESTARTS` (3) times an hour. After that, the watchdog stops trying and sends a high-priority "needs a look" notification, so a broken app can't restart-loop forever. Starts during boot don't count toward the limit.
 3. **DEVONthink databases.** If DEVONthink is configured, the watchdog makes sure the databases in `DEVONTHINK_DATABASES` are open, since DEVONthink's web server only serves open databases.
 4. **System health.** It warns when the startup disk has less than `MIN_FREE_GB` (20 GB) free, when memory pressure has stayed high for `MEMORY_PRESSURE_RUNS` (10) runs in a row (naming the three processes using the most memory, so you know where to look), and when traffic to `NAS_HOST` is going over Wi-Fi instead of Ethernet. That last one is easy to miss: macOS can quietly move Wi-Fi above Ethernet in the network service order, and then file sharing and Time Machine run over Wi-Fi.
-5. **Heartbeat (optional).** If `HEARTBEAT_URL` is set, for example to an [Uptime Kuma](https://github.com/louislam/uptime-kuma) push monitor, the watchdog requests it at the end of every run. If the watchdog stops running, or the Mac goes down entirely, the pings stop and your monitor tells you, which the watchdog can't do for itself.
+5. **Local media folder guard (optional).** Folders in `LOCAL_MEDIA_GUARD` should stay empty, such as Music's default local media folder when the real one is on a share. If an app starts before the share is mounted, it can quietly fall back to its local default, and new files landing there are the first sign of it. The watchdog warns as soon as one appears, and the warning clears once they're removed. Files already there when the guard is first set up are ignored.
+6. **Heartbeat (optional).** If `HEARTBEAT_URL` is set, for example to an [Uptime Kuma](https://github.com/louislam/uptime-kuma) push monitor, the watchdog requests it at the end of every run. If the watchdog stops running, or the Mac goes down entirely, the pings stop and your monitor tells you, which the watchdog can't do for itself.
 
 After a reboot, you get a notification when the Mac comes back up (from [`log-reboot.sh`](#log-reboot)), and another from the watchdog once everything is running — listing what it started — or, if something still isn't up after 15 minutes, a high-priority one saying what's wrong. Outside of boot, you get one notification when something goes down, and one when it comes back; nothing in between, however many times the watchdog checks.
 
@@ -101,8 +164,8 @@ The watchdog looks the app up by reading `Info.plist` files in `/Applications` a
 
 1. Copy the scripts to `/Applications` and make them executable:
    ```
-   cp scripts/mac-server-watchdog.sh scripts/pushover-notify.sh scripts/log-reboot.sh scripts/log-event.sh /Applications/
-   chmod 755 /Applications/mac-server-watchdog.sh /Applications/pushover-notify.sh /Applications/log-reboot.sh /Applications/log-event.sh
+   cp scripts/mac-server-watchdog.sh scripts/pushover-notify.sh scripts/log-reboot.sh scripts/log-event.sh scripts/before-update.sh /Applications/
+   chmod 755 /Applications/mac-server-watchdog.sh /Applications/pushover-notify.sh /Applications/log-reboot.sh /Applications/log-event.sh /Applications/before-update.sh
    ```
 2. Copy [`watchdog.conf.example`](watchdog.conf.example) to `~/.config/mac-server-watchdog.conf` and edit it for your server: your NAS, shares, and apps, in the order you want them started, with the shares each one needs. Find an app's bundle id with `osascript -e 'id of app "Plex Media Server"'`.
 3. Set up [notifications](#notifications).
@@ -170,6 +233,18 @@ You'll need a [Home Assistant](https://www.home-assistant.io) (HASS) server, and
 - The `<MOBILE_APP_NAME>`, at the end of the API endpoint, is specific to the name you have given your mobile device. Viktor's directions to find this are basically correct: Go to **Settings > Automations & scenes > Automations**, click **+ CREATE AUTOMATION**, then **Create New Automation**, and in the **Then do** section, **+ ADD ACTION** and search for `send a notification`. If you have several mobile apps, you will see a list that looks mostly like "Notifications: Send a notification via mobile_app_\<name\>". Find the one with the \<name\> that matches the name of your device, and that will be the value you need for the script. For instance, if my iPhone is called "Ianthe", the value I am looking for is probably `mobile_app_ianthe`.
 
 ## Helper scripts
+
+### Before Update
+
+[Script](scripts/before-update.sh)
+
+Run this just before installing a macOS update:
+
+```
+zsh /Applications/before-update.sh
+```
+
+It stops the watchdog, then quits the apps the watchdog manages (read from its config), last-started first, so macOS has nothing to reopen after the update restart. It only asks apps to quit. If one won't (an unsaved document, say), it tells you so you can deal with it, and never force-quits. After the restart, the watchdog loads at login as usual and starts each app once its shares are mounted. Changed your mind? `zsh /Applications/before-update.sh --undo` starts the watchdog again, and it relaunches the apps within a minute.
 
 ### Log Reboot
 

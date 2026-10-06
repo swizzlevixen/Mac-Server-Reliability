@@ -61,6 +61,13 @@ NOTIFY_CMD="/Applications/pushover-notify.sh"
 # current problems) is sent along as the msg parameter.
 # HEARTBEAT_URL="https://uptime.example.com/api/push/XXXXXXXXXX"
 
+# ---------- local media folder guard (optional) ----------
+# Folders that should stay empty because the real ones are on a share, such as Music's
+# default local media folder when its media folder is on the NAS. If an app starts before
+# the share is mounted, it can quietly fall back to the local default (Music does), and
+# new files appearing here are the first sign of it. Files already there are ignored.
+# LOCAL_MEDIA_GUARD=("$HOME/Music/Music/Media.localized/Music" "$HOME/Music/Music/Media.localized/Downloads-Music")
+
 # ---------- tuning (defaults shown) ----------
 # SHARE_GRACE=180      # seconds a share may be missing before the watchdog remounts it
 # LAUNCH_GRACE=300     # seconds after launching an app before health checks count
