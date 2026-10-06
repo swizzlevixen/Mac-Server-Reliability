@@ -46,6 +46,7 @@ DIALOG_SECONDS=4                # how long each dialog stays up
 MIN_FREE_GB=20                  # warn when the startup disk has less free space than this
 MEMORY_PRESSURE_RUNS=10         # warn after this many consecutive runs under memory pressure
 HEARTBEAT_URL=""                # e.g. an Uptime Kuma push URL; pinged after every completed run
+LOCAL_MEDIA_GUARD=()            # local folders that should stay empty because the real ones are on a share
 DRY_RUN=${DRY_RUN:-0}
 
 CONF=${WATCHDOG_CONF:-$HOME/.config/mac-server-watchdog.conf}
@@ -319,6 +320,22 @@ if [[ -n $NAS_HOST ]]; then
         mark_down nas-route "Traffic to $NAS_HOST is going over Wi-Fi ($wifi_dev) instead of Ethernet. Check the network service order."
     elif [[ -n $nas_if ]]; then
         mark_up nas-route "Traffic to $NAS_HOST over Ethernet"
+    fi
+fi
+
+# Folders that should stay empty, such as Music's default local media folder when the
+# real media folder is on a share. If an app starts before the share is mounted (after
+# a software update restart, say), it can quietly fall back to its local default, and
+# new files landing here are the first sign of it. Files already here when the guard
+# was first set up are ignored.
+if (( ${#LOCAL_MEDIA_GUARD} )); then
+    [[ -f "$STATE/guard-baseline" ]] || touch "$STATE/guard-baseline"
+    stray=("${(@f)$(find $LOCAL_MEDIA_GUARD -type f ! -name '.*' -Bnewer "$STATE/guard-baseline" 2>/dev/null)}")
+    stray=(${stray:#})
+    if (( ${#stray} )); then
+        mark_down local-media "${#stray} new file(s) in a folder that should stay empty, e.g. ${stray[1]}. An app may have lost its folder on the share; check its settings (Music › Settings › Files)."
+    else
+        mark_up local-media "Local media folder guard"
     fi
 fi
 
