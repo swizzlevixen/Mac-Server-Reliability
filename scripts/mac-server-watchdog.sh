@@ -20,7 +20,8 @@
 #   - Rate-limits restarts, so a broken app can't restart-loop.
 #   - Shows self-closing dialogs (queued, one at a time) for anyone watching the screen.
 #   - Sends notifications only on state changes (down / back / gave up), plus a
-#     summary once per boot.
+#     summary once per boot. (After a restart planned by weekly-restart.sh, the summary
+#     is notified only if something didn't come up.)
 #
 # Test without touching anything:  DRY_RUN=1 zsh mac-server-watchdog.sh
 
@@ -45,8 +46,13 @@ BOOT_WINDOW=900                 # "startup" dialogs + boot summary within this l
 DIALOG_SECONDS=4                # how long each dialog stays up
 MIN_FREE_GB=20                  # warn when the startup disk has less free space than this
 MEMORY_PRESSURE_RUNS=10         # warn after this many consecutive runs under memory pressure
+MEMORY_ALERT_LEVEL=2            # pressure level that counts: 2 = warning, 4 = critical only
 HEARTBEAT_URL=""                # e.g. an Uptime Kuma push URL; pinged after every completed run
 LOCAL_MEDIA_GUARD=()            # local folders that should stay empty because the real ones are on a share
+LOCAL_MEDIA_GUARD_SKIP=()       # names to skip inside guarded folders, e.g. "*.musiclibrary" "*.movpkg"
+PREF_CHECKS=()                  # "domain|key|expected value" — alert if an app setting drifts
+MUSIC_SAMPLE_ROOT=""            # e.g. /Volumes/Plex/Music — once a day, check sampled Music tracks live here
+MUSIC_SAMPLE_SIZE=20            # how many random tracks to sample
 DRY_RUN=${DRY_RUN:-0}
 
 CONF=${WATCHDOG_CONF:-$HOME/.config/mac-server-watchdog.conf}
@@ -95,6 +101,9 @@ st_set()       { print -r -- "$2" > "$STATE/$1"; }
 running()      { pgrep -qf "^$1"; }
 http_ok()      { curl -fsS -m 5 -o /dev/null "$1" 2>/dev/null; }
 share_ok()     { mount | grep -q " on /Volumes/$1 ("; }
+# Where a share is mounted when its own name was taken at the time, e.g. /Volumes/name-1.
+# That happens when two things mount it at the same moment (a login item and an automounter).
+share_astray() { mount | sed -n "s|^//.*/$1 on \\(/Volumes/$1-[0-9][0-9]*\\) (.*|\\1|p" | head -1; }
 
 # Self-closing dialog for every watchdog action; never blocks the watchdog.
 # Messages are queued and shown one at a time by a single detached runner —
@@ -252,10 +261,22 @@ for s in $SHARES; do
         mark_up "share-$s" "Network share $s"
         continue
     fi
+    # Mounted under another name: apps look for /Volumes/$s, and Finder won't mount a share
+    # twice, so move it. Without force: if something has files open there, say so instead.
+    what="unmounted"
+    astray=$(share_astray "$s")
+    if [[ -n $astray ]]; then
+        if (( DRY_RUN )) || with_timeout 30 diskutil unmount "$astray" >/dev/null 2>&1; then
+            log "share $s was mounted as $astray; mounting it as /Volumes/$s"
+            (( DRY_RUN )) || [[ -z $NAS_HOST ]] || with_timeout 60 osascript -e "tell application \"Finder\" to mount volume \"smb://$NAS_HOST/$s\"" >/dev/null 2>&1
+            continue
+        fi
+        what="mounted as $astray, which is in use and can't be moved,"
+    fi
     first=$(st_get "missing-$s")
-    [[ -z $first ]] && { first=$now; st_set "missing-$s" "$now"; log "share $s not mounted"; }
+    [[ -z $first ]] && { first=$now; st_set "missing-$s" "$now"; log "share $s not mounted${astray:+ (it is mounted as $astray)}"; }
     if (( now - first >= SHARE_GRACE )); then
-        mark_down "share-$s" "Network share $s unmounted for $(( (now - first) / 60 )) min"
+        mark_down "share-$s" "Network share $s $what for $(( (now - first) / 60 )) min"
         if [[ -n $NAS_HOST ]]; then
             dialog "Network share $s has been missing for $(( (now - first) / 60 )) min. Remounting it…"
             log "mounting smb://$NAS_HOST/$s"
@@ -303,7 +324,10 @@ for entry in $SERVICES; do
 done
 
 # ---------- system health ----------
-free_gb=$(df -g /System/Volumes/Data | awk 'NR==2 {print $4}')
+# Free space as Finder counts it: includes purgeable space (local Time Machine
+# snapshots, caches) that macOS frees on demand. Fall back to df's strict figure.
+free_gb=$(osascript -l JavaScript -e 'ObjC.import("Foundation"); Math.floor($.NSURL.fileURLWithPath("/System/Volumes/Data").resourceValuesForKeysError(["NSURLVolumeAvailableCapacityForImportantUsageKey"], null).objectForKey("NSURLVolumeAvailableCapacityForImportantUsageKey").js / 1073741824)' 2>/dev/null)
+[[ $free_gb == <-> ]] || free_gb=$(df -g /System/Volumes/Data | awk 'NR==2 {print $4}')
 if [[ -n $free_gb ]] && (( free_gb < MIN_FREE_GB )); then
     mark_down disk "Startup disk is almost full: ${free_gb} GB free"
 else
@@ -330,7 +354,10 @@ fi
 # was first set up are ignored.
 if (( ${#LOCAL_MEDIA_GUARD} )); then
     [[ -f "$STATE/guard-baseline" ]] || touch "$STATE/guard-baseline"
-    stray=("${(@f)$(find $LOCAL_MEDIA_GUARD -type f ! -name '.*' -Bnewer "$STATE/guard-baseline" 2>/dev/null)}")
+    prune=(); for n in $LOCAL_MEDIA_GUARD_SKIP; do prune+=(${prune:+-o} -name "$n"); done
+    (( ${#prune} )) && prune=('(' $prune ')' -prune -o)
+    stray=("${(@f)$(find $LOCAL_MEDIA_GUARD $prune \
+        -type f ! -name '.*' -Bnewer "$STATE/guard-baseline" -print 2>/dev/null)}")
     stray=(${stray:#})
     if (( ${#stray} )); then
         mark_down local-media "${#stray} new file(s) in a folder that should stay empty, e.g. ${stray[1]}. An app may have lost its folder on the share; check its settings (Music › Settings › Files)."
@@ -339,9 +366,57 @@ if (( ${#LOCAL_MEDIA_GUARD} )); then
     fi
 fi
 
+# App settings that must not drift, such as Music's media folder, which macOS can reset
+# to the local default if Music starts before its share is mounted. Reads the plist file
+# itself: under launchd, `defaults read` can't see other apps' settings and says "unset".
+for entry in $PREF_CHECKS; do
+    IFS='|' read -r domain pkey want <<< "$entry"
+    have=$(plutil -extract "$pkey" raw -o - "$HOME/Library/Preferences/$domain.plist" 2>/dev/null)
+    if [[ $have != $want ]]; then
+        mark_down "pref-$domain-$pkey" "$domain $pkey is '${have:-unset}', expected '$want'. Check the app's settings."
+    else
+        mark_up "pref-$domain-$pkey" "$domain $pkey"
+    fi
+done
+
+# Once a day, ask Music where a random sample of its tracks are, and check each file
+# exists under MUSIC_SAMPLE_ROOT. Cloud-only tracks (no file) are skipped. Only runs
+# while the share is mounted and Music is already running; it never launches Music.
+if [[ -n $MUSIC_SAMPLE_ROOT ]] && share_ok "${${MUSIC_SAMPLE_ROOT#/Volumes/}%%/*}" \
+    && pgrep -qx Music && [[ -z $(find "$STATE/music-sample" -mmin -1440 2>/dev/null) ]]; then
+    locs=$(with_timeout 120 osascript <<EOF 2>/dev/null
+tell application id "com.apple.Music"
+    set n to count file tracks of library playlist 1
+    set out to {}
+    repeat $MUSIC_SAMPLE_SIZE times
+        try
+            set loc to location of file track (random number from 1 to n) of library playlist 1
+            if loc is not missing value then set end of out to POSIX path of loc
+        end try
+    end repeat
+    set AppleScript's text item delimiters to linefeed
+    return out as text
+end tell
+EOF
+)
+    if [[ -n $locs ]]; then
+        touch "$STATE/music-sample"
+        bad=()
+        for p in "${(@f)locs}"; do
+            [[ $p == $MUSIC_SAMPLE_ROOT/* && -e $p ]] || bad+=("$p")
+        done
+        log "music sample: $(( ${#${(@f)locs}} - ${#bad} )) of ${#${(@f)locs}} tracks OK"
+        if (( ${#bad} )); then
+            mark_down music-sample "${#bad} of ${#${(@f)locs}} sampled Music tracks are missing or outside $MUSIC_SAMPLE_ROOT, e.g. ${bad[1]}"
+        else
+            mark_up music-sample "Music track locations"
+        fi
+    fi
+fi
+
 # 1 = normal, 2 = warning, 4 = critical
 pressure=$(sysctl -n kern.memorystatus_vm_pressure_level 2>/dev/null)
-if (( ${pressure:-1} > 1 )); then
+if (( ${pressure:-1} >= MEMORY_ALERT_LEVEL )); then
     runs=$(( $(st_get pressure-runs) + 1 )); st_set pressure-runs "$runs"
     if (( runs >= MEMORY_PRESSURE_RUNS )) && [[ ! -f "$STATE/down-memory" ]]; then
         # Name the biggest users (top's MEM includes compressed memory), so the alert says what to look at
@@ -367,9 +442,17 @@ if $BOOTING && [[ ! -f "$STATE/boot-$boot" ]]; then
         log "startup complete"
         dialog "All $SERVER_NAME services are running."
         started_list=$(paste -sd ',' "$STATE/boot-started-$boot" 2>/dev/null | sed 's/,/, /g')
-        notify "✅ $SERVER_NAME startup complete $(( (now - boot) / 60 ))m$(( (now - boot) % 60 ))s after boot. All services running${started_list:+ (started: $started_list)}." 0
+        # weekly-restart.sh leaves a note just before it restarts the Mac. A planned restart
+        # that went well isn't news: the log line above is enough.
+        if [[ -n $(find "$STATE/planned-restart" -mmin -45 2>/dev/null) ]]; then
+            log "planned restart: everything is back $(( (now - boot) / 60 ))m$(( (now - boot) % 60 ))s after boot${started_list:+ (started: $started_list)}; not notified"
+        else
+            notify "✅ $SERVER_NAME startup complete $(( (now - boot) / 60 ))m$(( (now - boot) % 60 ))s after boot. All services running${started_list:+ (started: $started_list)}." 0
+        fi
+        rm -f "$STATE/planned-restart"
     elif (( now - boot >= BOOT_WINDOW - 60 )); then
         touch "$STATE/boot-$boot"
+        rm -f "$STATE/planned-restart"
         log "startup finished with problems: ${(j:; :)problems}"
         notify "⚠️ $SERVER_NAME restarted $(( (now - boot) / 60 )) min ago but not everything is up: ${(j:; :)problems}" 1
     fi
@@ -378,8 +461,23 @@ rm -f "$STATE"/boot-*(Nm+30)
 
 # Heartbeat last, so it means "the watchdog completed a run", not just "the Mac is on".
 if [[ -n $HEARTBEAT_URL ]] && (( ! DRY_RUN )); then
-    curl -fsS -m 10 -o /dev/null -G --data-urlencode "status=up" \
-        --data-urlencode "msg=${${(j:; :)problems}:-OK}" "$HEARTBEAT_URL" 2>/dev/null \
-        || log "heartbeat failed"
+    # One retry after 5 s; log curl's error so failures can be diagnosed.
+    hb_errs=()
+    for try in 1 2; do
+        hb_err=$(curl -fsS -m 10 -o /dev/null -G --data-urlencode "status=up" \
+            --data-urlencode "msg=${${(j:; :)problems}:-OK}" "$HEARTBEAT_URL" 2>&1) && break
+        hb_errs+=("${hb_err//$'\n'/ }")
+        if (( try == 1 )); then
+            # Comparison: can we reach a well-known site right now? Tells the home
+            # connection apart from the status server or its route.
+            cmp=$(curl -sS -m 10 -o /dev/null -I -w '%{http_code} in %{time_total}s' https://www.apple.com/ 2>&1)
+            sleep 5
+        fi
+    done
+    if (( ${#hb_errs} == 2 )); then
+        log "heartbeat failed twice: ${hb_errs[1]} / ${hb_errs[2]} (apple.com: ${cmp//$'\n'/ })"
+    elif (( ${#hb_errs} == 1 )); then
+        log "heartbeat retry OK after: ${hb_errs[1]} (apple.com: ${cmp//$'\n'/ })"
+    fi
 fi
 exit 0
