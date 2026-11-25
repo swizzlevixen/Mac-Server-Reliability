@@ -68,6 +68,41 @@ NOTIFY_CMD="/Applications/pushover-notify.sh"
 # new files appearing here are the first sign of it. Files already there are ignored.
 # LOCAL_MEDIA_GUARD=("$HOME/Music/Music/Media.localized/Music" "$HOME/Music/Music/Media.localized/Downloads-Music")
 
+# Names to skip inside the guarded folders, for things an app keeps there by design.
+# LOCAL_MEDIA_GUARD_SKIP=("*.musiclibrary" "*.movpkg")
+
+# ---------- app settings that must not drift (optional) ----------
+# "domain|key|expected value": the watchdog warns when ~/Library/Preferences/<domain>.plist
+# has another value for the key, and says so again when it is back. Music's media folder
+# is the classic: macOS can reset it to the local default if Music starts before its share.
+# PREF_CHECKS=("com.example.App|SomeKey|expected value")
+
+# ---------- Music track locations (optional) ----------
+# Once a day, while Music is running, ask it where a random sample of its tracks are and
+# check each file exists under this folder. Tracks with no file (cloud only) are skipped.
+# MUSIC_SAMPLE_ROOT="/Volumes/plexmedia/Music"
+# MUSIC_SAMPLE_SIZE=20
+
+# ---------- weekly restart (optional; scripts/weekly-restart.sh) ----------
+# The restart waits while someone is at the Mac, while Plex is playing something, and
+# while any of these commands succeeds: "what is going on|command that succeeds while it is"
+# RESTART_BUSY_CHECKS=(
+#   "a backup script is running|pgrep -qf nightly-backup"
+#   "the Actions runner has a job|pgrep -qf Runner.Worker"
+# )
+# Housekeeping to run just before the restart, 10 minutes each at most. A failure is
+# logged and the restart goes ahead: "what it does|command"
+# RESTART_CLEANUP=(
+#   "delete all Xcode simulators|xcrun simctl delete all"
+# )
+# RESTART_RETRY=600             # seconds between looks while the Mac is busy
+# RESTART_WINDOW=10800          # seconds after the scheduled time at which this week is skipped
+# RESTART_IDLE_MIN=15           # minutes without a key or mouse move before nobody is at the Mac
+# RESTART_MIN_UPTIME_DAYS=2     # no restart when the Mac was restarted this recently anyway
+# RESTART_OVERDUE_DAYS=13       # notify when a restart is skipped and the Mac has been up this long
+# RESTART_STUCK=300             # seconds after asking for the restart before it counts as stopped
+# RESTART_PLEX_URL="http://127.0.0.1:32400"   # "" to not look at Plex
+
 # ---------- tuning (defaults shown) ----------
 # SHARE_GRACE=180      # seconds a share may be missing before the watchdog remounts it
 # LAUNCH_GRACE=300     # seconds after launching an app before health checks count
@@ -77,3 +112,4 @@ NOTIFY_CMD="/Applications/pushover-notify.sh"
 # DIALOG_SECONDS=4     # how long each dialog stays on screen
 # MIN_FREE_GB=20       # warn when the startup disk has less free space than this
 # MEMORY_PRESSURE_RUNS=10  # warn after this many consecutive runs (minutes) under memory pressure
+# MEMORY_ALERT_LEVEL=2     # the memory pressure level that counts: 2 = warning, 4 = critical only

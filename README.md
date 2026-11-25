@@ -82,6 +82,8 @@ With the watchdog in charge of the server apps, Login Items is now only for thin
 - `scandocs` and `plexmedia` network drives, from the Synology `mynas` NAS (or an app like AutoMounter — see below)
 - Screens Connect (for remote access)
 
+Mount each share with **one** thing only: Login Items *or* an automounter, not both. When two things mount the same share at the same moment, the second one lands at `/Volumes/name-1`, and apps looking for `/Volumes/name` don't find it. (The watchdog repairs that when it can, but it is better not to cause it.)
+
 **Don't** put the server apps themselves in Login Items, and turn off any "open at login" setting inside those apps — otherwise they'll start before their network shares are mounted. The watchdog starts them.
 
 ### A note on AutoMounter
@@ -132,18 +134,19 @@ The script never mounts over a folder that has something in it, and if a mount f
 
 Every 60 seconds (and once at login), the watchdog runs through this:
 
-1. **Network shares.** For each share in `SHARES`, it checks whether it's mounted under `/Volumes`. Your login items or automounter should normally handle mounting; the watchdog gives them `SHARE_GRACE` (3 minutes) and only then remounts the share itself, via Finder, using the Keychain credentials already saved for the NAS. It tries again every minute until the share is back.
+1. **Network shares.** For each share in `SHARES`, it checks whether it's mounted under `/Volumes`. Your login items or automounter should normally handle mounting; the watchdog gives them `SHARE_GRACE` (3 minutes) and only then remounts the share itself, via Finder, using the Keychain credentials already saved for the NAS. It tries again every minute until the share is back. A share that got mounted under another name (`/Volumes/name-1`) is unmounted, without force, and mounted again under its own name; if something has files open there, the watchdog says so instead.
 2. **Services, in config order.** For each app in `SERVICES`:
    - **Dependencies first.** If any share the app needs isn't mounted, the app isn't started (or restarted) — so Plex never starts against a missing media share. Apps that *don't* need that share start anyway; one slow share no longer holds up the whole server. If an app is already running when its share disappears, it's left alone — unless it's listed in `QUIT_WHEN_SHARE_MISSING`, in which case it's quit once the share has been gone for the grace period, and started again when the share returns.
    - **Running?** If not, it's started.
    - **Healthy?** If the app has a health URL (Plex's `/identity`, DEVONthink's web server), the watchdog actually requests it. A running-but-hung app is restarted after `UNHEALTHY_LIMIT` (3) failed checks in a row — gracefully quit first, force-quit only if it won't go. Freshly launched apps get `LAUNCH_GRACE` (5 minutes) to come up before their health checks count.
    - **Rate limited.** No app is restarted more than `MAX_RESTARTS` (3) times an hour. After that, the watchdog stops trying and sends a high-priority "needs a look" notification, so a broken app can't restart-loop forever. Starts during boot don't count toward the limit.
 3. **DEVONthink databases.** If DEVONthink is configured, the watchdog makes sure the databases in `DEVONTHINK_DATABASES` are open, since DEVONthink's web server only serves open databases.
-4. **System health.** It warns when the startup disk has less than `MIN_FREE_GB` (20 GB) free, when memory pressure has stayed high for `MEMORY_PRESSURE_RUNS` (10) runs in a row (naming the three processes using the most memory, so you know where to look), and when traffic to `NAS_HOST` is going over Wi-Fi instead of Ethernet. That last one is easy to miss: macOS can quietly move Wi-Fi above Ethernet in the network service order, and then file sharing and Time Machine run over Wi-Fi.
+4. **System health.** It warns when the startup disk has less than `MIN_FREE_GB` (20 GB) free (counted the way Finder does, including space macOS frees on demand), when memory pressure has stayed high for `MEMORY_PRESSURE_RUNS` (10) runs in a row (naming the three processes using the most memory, so you know where to look), and when traffic to `NAS_HOST` is going over Wi-Fi instead of Ethernet. That last one is easy to miss: macOS can quietly move Wi-Fi above Ethernet in the network service order, and then file sharing and Time Machine run over Wi-Fi.
 5. **Local media folder guard (optional).** Folders in `LOCAL_MEDIA_GUARD` should stay empty, such as Music's default local media folder when the real one is on a share. If an app starts before the share is mounted, it can quietly fall back to its local default, and new files landing there are the first sign of it. The watchdog warns as soon as one appears, and the warning clears once they're removed. Files already there when the guard is first set up are ignored.
-6. **Heartbeat (optional).** If `HEARTBEAT_URL` is set, for example to an [Uptime Kuma](https://github.com/louislam/uptime-kuma) push monitor, the watchdog requests it at the end of every run. If the watchdog stops running, or the Mac goes down entirely, the pings stop and your monitor tells you, which the watchdog can't do for itself.
+6. **Settings that must not drift (optional).** Each `PREF_CHECKS` entry names an app setting and the value it must have, such as Music's media folder; the watchdog warns when it changes. With `MUSIC_SAMPLE_ROOT` set, it also asks Music once a day where a random sample of its tracks are, and warns if any file is missing or outside that folder.
+7. **Heartbeat (optional).** If `HEARTBEAT_URL` is set, for example to an [Uptime Kuma](https://github.com/louislam/uptime-kuma) push monitor, the watchdog requests it at the end of every run. If the watchdog stops running, or the Mac goes down entirely, the pings stop and your monitor tells you, which the watchdog can't do for itself.
 
-After a reboot, you get a notification when the Mac comes back up (from [`log-reboot.sh`](#log-reboot)), and another from the watchdog once everything is running — listing what it started — or, if something still isn't up after 15 minutes, a high-priority one saying what's wrong. Outside of boot, you get one notification when something goes down, and one when it comes back; nothing in between, however many times the watchdog checks.
+After a reboot, you get a notification when the Mac comes back up (from [`log-reboot.sh`](#log-reboot)), and another from the watchdog once everything is running — listing what it started — or, if something still isn't up after 15 minutes, a high-priority one saying what's wrong. After a restart planned by [`weekly-restart.sh`](#weekly-restart), both are only logged when everything came back; a startup with problems is notified as always. Outside of boot, you get one notification when something goes down, and one when it comes back; nothing in between, however many times the watchdog checks.
 
 ### Dialogs
 
@@ -246,11 +249,36 @@ zsh /Applications/before-update.sh
 
 It stops the watchdog, then quits the apps the watchdog manages (read from its config), last-started first, so macOS has nothing to reopen after the update restart. It only asks apps to quit. If one won't (an unsaved document, say), it tells you so you can deal with it, and never force-quits. After the restart, the watchdog loads at login as usual and starts each app once its shares are mounted. Changed your mind? `zsh /Applications/before-update.sh --undo` starts the watchdog again, and it relaunches the apps within a minute.
 
+### Weekly Restart
+
+[Script](scripts/weekly-restart.sh) · [LaunchAgent](LaunchAgents/com.admin.weekly-restart.plist)
+
+Apps on a server that is never restarted keep memory they no longer need. Swap grows until the startup disk has no room for more, and macOS then says it has run out of application memory. This restarts the Mac once a week, in the small hours (Sundays at 01:50, set in the LaunchAgent).
+
+- **It waits while the Mac is busy:** someone at the keyboard, something playing in Plex, or one of your own `RESTART_BUSY_CHECKS` (a backup, a CI job). It looks again every 10 minutes, and after 3 hours it skips the week.
+- **It runs your `RESTART_CLEANUP` commands** just before restarting: housekeeping that is best done once a week while nothing is using the Mac. A failure is logged and the restart goes ahead.
+- **It restarts the ordinary way:** it runs `before-update.sh`, then asks Finder to restart. An app with a question on screen can stop that; five minutes later the script puts everything back and tells you which apps are still open.
+- **It only notifies when there is something to do:** an app stopped the restart, or the restart has been put off until the Mac has been up 13 days. A restart that went well is in the log, as `REBOOT (planned weekly restart)` and `planned restart: everything is back …`.
+
+Put the script in `/Applications`, the LaunchAgent in `~/Library/LaunchAgents/`, and register it:
+
+```
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.admin.weekly-restart.plist
+```
+
+| To | Do |
+|---|---|
+| Skip the next restart | `touch ~/.config/weekly-restart.hold` (removed once used) |
+| See what it would do | `DRY_RUN=1 zsh /Applications/weekly-restart.sh` |
+| Restart right now | `zsh /Applications/weekly-restart.sh --now` (doesn't look whether the Mac is busy) |
+
+The settings, all optional, are in the [example config](watchdog.conf.example) under "weekly restart".
+
 ### Log Reboot
 
 [Link](scripts/log-reboot.sh)
 
-For a while, I was having trouble with the server kernel panicking, and so I wanted to make sure that I was notified any time the server rebooted. This is meant to run as a LaunchAgent, once on boot. It differs from the `log-event` script below, in that it grabs the latest boot time from `sysctl` for accuracy, instead of relying on the current time when this script runs. Since it runs right at login, when the network may not be up yet, it retries the notification for about two minutes.
+For a while, I was having trouble with the server kernel panicking, and so I wanted to make sure that I was notified any time the server rebooted. This is meant to run as a LaunchAgent, once on boot. It differs from the `log-event` script below, in that it grabs the latest boot time from `sysctl` for accuracy, instead of relying on the current time when this script runs. A restart planned by `weekly-restart.sh` is logged as `REBOOT (planned weekly restart)` and not notified. Since it runs right at login, when the network may not be up yet, it retries the notification for about two minutes.
 
 [The LaunchAgent, `com.admin.log-reboot.plist`](LaunchAgents/com.admin.log-reboot.plist) should be placed in the folder `~/Library/LaunchAgents/`, and then registered with this command:
 
